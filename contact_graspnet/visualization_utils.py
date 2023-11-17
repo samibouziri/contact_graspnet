@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import mayavi.mlab as mlab
 import matplotlib.pyplot as plt
@@ -194,4 +195,78 @@ def draw_grasps(grasps, cam_pose, gripper_openings, color=(0,1.,0), colors=None,
     src.update()
     lines =mlab.pipeline.tube(src, tube_radius=tube_radius, tube_sides=12)
     mlab.pipeline.surface(lines, color=color, opacity=1.0)
-    
+
+def visualize_2d_grasps(image, camera_matrix, dist_coeffs, pred_grasps_cam, scores, gripper_openings=None, gripper_width=0.08):
+    """Visualizes colored point cloud and predicted grasps. If given, colors grasps by segmap regions. 
+    Thick grasp is most confident per segment. For scene point cloud predictions, colors grasps according to confidence.
+
+    Arguments:
+        full_pc {np.ndarray} -- Nx3 point cloud of the scene
+        pred_grasps_cam {dict[int:np.ndarray]} -- Predicted 4x4 grasp trafos per segment or for whole point cloud
+        scores {dict[int:np.ndarray]} -- Confidence scores for grasps
+
+    Keyword Arguments:
+        plot_opencv_cam {bool} -- plot camera coordinate frame (default: {False})
+        pc_colors {np.ndarray} -- Nx3 point cloud colors (default: {None})
+        gripper_openings {dict[int:np.ndarray]} -- Predicted grasp widths (default: {None})
+        gripper_width {float} -- If gripper_openings is None, plot grasp widths (default: {0.008})
+    """
+
+    print('Visualizing...takes time')
+    cm = plt.get_cmap('rainbow')
+    cm2 = plt.get_cmap('gist_rainbow')
+
+    colors = [cm(1. * i/len(pred_grasps_cam))[:3] for i in range(len(pred_grasps_cam))]
+    colors2 = {k:cm2(0.5*np.max(scores[k]))[:3] for k in pred_grasps_cam if np.any(pred_grasps_cam[k])}
+
+    for i,k in enumerate(pred_grasps_cam):
+        if np.any(pred_grasps_cam[k]):
+            gripper_openings_k = np.ones(len(pred_grasps_cam[k]))*gripper_width if gripper_openings is None else gripper_openings[k]
+            if len(pred_grasps_cam) > 1:
+                draw_2d_grasps(pred_grasps_cam[k], color=colors[i], gripper_openings=gripper_openings_k,
+                               image=image, camera_matrix=camera_matrix, dist_coeffs=dist_coeffs)    
+                draw_2d_grasps([pred_grasps_cam[k][np.argmax(scores[k])]], color=colors2[k], 
+                            gripper_openings=[gripper_openings_k[np.argmax(scores[k])]],
+                            image=image, camera_matrix=camera_matrix, dist_coeffs=dist_coeffs)    
+            else:
+                colors3 = [cm2(0.5*score)[:3] for score in scores[k]]
+                draw_2d_grasps(pred_grasps_cam[k], colors=colors3, gripper_openings=gripper_openings_k,
+                               image=image, camera_matrix=camera_matrix, dist_coeffs=dist_coeffs)
+
+def draw_2d_grasps(grasps, gripper_openings, image, camera_matrix, dist_coeffs, color=(0,1.,0), colors=None):
+    """
+    Draws wireframe grasps from given camera pose and with given gripper openings
+
+    Arguments:
+        grasps {np.ndarray} -- Nx4x4 grasp pose transformations
+        cam_pose {np.ndarray} -- 4x4 camera pose transformation
+        gripper_openings {np.ndarray} -- Nx1 gripper openings
+
+    Keyword Arguments:
+        color {tuple} -- color of all grasps (default: {(0,1.,0)})
+        colors {np.ndarray} -- Nx3 color of each grasp (default: {None})
+        tube_radius {float} -- Radius of the grasp wireframes (default: {0.0008})
+        show_gripper_mesh {bool} -- Renders the gripper mesh for one of the grasp poses (default: {False})
+    """
+
+    gripper = mesh_utils.create_gripper('panda')
+    gripper_control_points = gripper.get_control_point_tensor(1, False, convex_hull=False).squeeze()
+    mid_point = 0.5*(gripper_control_points[1, :] + gripper_control_points[2, :])
+    grasp_line_plot = np.array([np.zeros((3,)), mid_point, gripper_control_points[1], gripper_control_points[3], 
+                                gripper_control_points[1], gripper_control_points[2], gripper_control_points[4]])
+
+    for i,(g,g_opening) in enumerate(zip(grasps, gripper_openings)):
+        gripper_control_points_closed = grasp_line_plot.copy()
+        gripper_control_points_closed[2:,0] = np.sign(grasp_line_plot[2:,0]) * g_opening/2
+        
+        pts = np.matmul(gripper_control_points_closed, g[:3, :3].T)
+        pts += np.expand_dims(g[:3, 3], 0)
+        pts, _ = cv2.projectPoints(pts, np.eye(3), np.zeros(3), camera_matrix, dist_coeffs)
+        pts = pts.astype(np.int32).reshape((-1, 1, 2))
+        
+        color = color if colors is None else colors[i]
+        color = (int(color[0]*255), int(color[1]*255), int(color[2]*255))
+
+        image = cv2.polylines(image, [pts], False, color)
+
+        
