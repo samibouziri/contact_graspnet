@@ -17,7 +17,7 @@ import config_utils
 from data import regularize_pc_point_count, depth2pc, load_available_input_data
 
 from contact_grasp_estimator import GraspEstimator
-from visualization_utils import visualize_2d_grasps, show_image
+# from visualization_utils import visualize_2d_grasps, show_image
 
 def inference(global_config, checkpoint_dir, input_paths, K=None, local_regions=True, skip_border_objects=False, filter_grasps=True, segmap_id=None, z_range=[0.2,1.8], forward_passes=1):
     """
@@ -78,7 +78,7 @@ def inference(global_config, checkpoint_dir, input_paths, K=None, local_regions=
         
         rgb = np.array(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
 
-        visualize_2d_grasps(rgb, cam_K, np.zeros(5), pred_grasps_cam, scores, gripper_openings= grasp_opennings)
+        # visualize_2d_grasps(rgb, cam_K, np.zeros(5), pred_grasps_cam, scores, gripper_openings= grasp_opennings)
         while True:
             cv2.imshow('Projected Shape', rgb)
             key = cv2.waitKey(1)
